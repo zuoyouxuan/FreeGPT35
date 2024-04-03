@@ -8,17 +8,6 @@ ENVIRONMENT = 'dev'
 CUSTOM_HEADERS_TO_IGNORE = []
 
 #
-#Configuration for DEVELOPMENT environment
-#
-[env.staging]
-name = "freegpt-dev"
-
-[env.staging.vars]
-ENVIRONMENT = 'staging'
-CUSTOM_HEADERS_TO_IGNORE = []
-
-
-#
 #Configuration for PRODUCTION environment
 
 [env.production]
