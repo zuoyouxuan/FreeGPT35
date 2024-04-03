@@ -20,7 +20,7 @@ CUSTOM_HEADERS_TO_IGNORE = []
 
 #
 #Configuration for PRODUCTION environment
-#
+
 [env.production]
 name = "freegpt"
 logpush=true
