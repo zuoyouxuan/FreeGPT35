@@ -1,6 +1,8 @@
 // Assuming the availability of the fetch API and addEventListener method in the Workers environment
 
 // Constants for the server and API configuration
+import {randomUUID} from "crypto";
+
 const baseUrl = "https://chat.openai.com";
 const apiUrl = `${baseUrl}/backend-api/conversation`;
 const refreshInterval = 60000; // Interval to refresh token in ms
@@ -104,10 +106,141 @@ async function handleRequest(request) {
 
 async function handleChatCompletion(request) {
   console.log("Request:", `${request.method} ${request.url}`, request.headers.get('stream') ? "(stream-enabled)" : "(stream-disabled)");
-  // The try-catch block and the rest of the function remains largely the same as in the original TypeScript version
-  // Omitting for brevity. Please insert appropriate JavaScript code here.
+  try {
+    const body = {
+      action: "next",
+      messages: req.body.messages.map((message) => ({
+        author: { role: message.role },
+        content: { content_type: "text", parts: [message.content] },
+      })),
+      parent_message_id: randomUUID(),
+      model: "text-davinci-002-render-sha",
+      timezone_offset_min: -180,
+      suggestions: [],
+      history_and_training_disabled: true,
+      conversation_mode: { kind: "primary_assistant" },
+      websocket_request_id: randomUUID(),
+    };
 
-  // Make sure to replace any TypeScript-specific code with its JavaScript counterpart.
+    const response = await axiosInstance.post(apiUrl, body, {
+      responseType: "stream",
+      headers: {
+        "oai-device-id": oaiDeviceId,
+        "openai-sentinel-chat-requirements-token": token,
+      },
+    });
+
+    // Set the response headers based on the request type
+    if (req.body.stream) {
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+    } else {
+      res.setHeader("Content-Type", "application/json");
+    }
+
+    let fullContent = "";
+    let requestId = GenerateCompletionId("chatcmpl-");
+    let created = Date.now();
+
+    for await (const message of StreamCompletion(response.data)) {
+      const parsed = JSON.parse(message);
+
+      let content = parsed?.message?.content?.parts[0] ?? "";
+
+      for (let message of req.body.messages) {
+        if (message.content === content) {
+          content = "";
+          break;
+        }
+      }
+
+      if (content === "") continue;
+
+      if (req.body.stream) {
+        let response = {
+          id: requestId,
+          created: created,
+          object: "chat.completion.chunk",
+          model: "gpt-3.5-turbo",
+          choices: [
+            {
+              delta: {
+                content: content.replace(fullContent, ""),
+              },
+              index: 0,
+              finish_reason: null,
+            },
+          ],
+        };
+
+        res.write(`data: ${JSON.stringify(response)}\n\n`);
+      }
+
+      fullContent = content.length > fullContent.length ? content : fullContent;
+    }
+
+    if (req.body.stream) {
+      res.write(
+          `data: ${JSON.stringify({
+            id: requestId,
+            created: created,
+            object: "chat.completion.chunk",
+            model: "gpt-3.5-turbo",
+            choices: [
+              {
+                delta: {
+                  content: "",
+                },
+                index: 0,
+                finish_reason: "stop",
+              },
+            ],
+          })}\n\n`
+      );
+    } else {
+      res.write(
+          JSON.stringify({
+            id: requestId,
+            created: created,
+            model: "gpt-3.5-turbo",
+            object: "chat.completion",
+            choices: [
+              {
+                finish_reason: "stop",
+                index: 0,
+                message: {
+                  content: fullContent,
+                  role: "assistant",
+                },
+              },
+            ],
+            usage: {
+              prompt_tokens: 0,
+              completion_tokens: 0,
+              total_tokens: 0,
+            },
+          })
+      );
+    }
+
+    res.end();
+  } catch (error: any) {
+    // console.log('Error:', error.response?.data ?? error.message);
+    if (!res.headersSent) res.setHeader("Content-Type", "application/json");
+    // console.error('Error handling chat completion:', error);
+    res.write(
+        JSON.stringify({
+          status: false,
+          error: {
+            message: "An error happened, please make sure your request is SFW, or use a jailbreak to bypass the filter.",
+            type: "invalid_request_error",
+          },
+          support: "https://discord.pawan.krd",
+        })
+    );
+    res.end();
+  }
 }
 
 async function refreshTokenLoop() {
