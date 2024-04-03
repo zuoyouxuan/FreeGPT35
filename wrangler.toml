@@ -4,7 +4,7 @@ main = "app.ts"
 node_compat = true
 
 [vars]
-ENVIRONMENT = 'dev'
+ENVIRONMENT = 'production'
 CUSTOM_HEADERS_TO_IGNORE = []
 
 #
